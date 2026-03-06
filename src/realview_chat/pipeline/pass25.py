@@ -23,6 +23,8 @@ class Pass25Result:
     confirmed_features: list[ConsolidatedFeature]
     room_condition_score: int | None
     room_modernity_score: int | None
+    room_material_score: int | None
+    room_functionality_score: int | None
 
 
 def run_pass25(
@@ -45,4 +47,6 @@ def run_pass25(
         confirmed_features=features,
         room_condition_score=result.get("room_condition_score"),
         room_modernity_score=result.get("room_modernity_score"),
+        room_material_score=result.get("room_material_score"),
+        room_functionality_score=result.get("room_functionality_score"),
     )

@@ -91,6 +91,10 @@ def _process_images(property_id: str, image_paths: list[Path], client: LLMClient
             entry["condition_score"] = p2.condition_score
         if p2 and p2.modernity_score is not None:
             entry["modernity_score"] = p2.modernity_score
+        if p2 and p2.material_score is not None:
+            entry["material_score"] = p2.material_score
+        if p2 and p2.functionality_score is not None:
+            entry["functionality_score"] = p2.functionality_score
         images.append(entry)
 
     return {

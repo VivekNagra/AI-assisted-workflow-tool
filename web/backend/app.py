@@ -121,7 +121,7 @@ def post_feedback():
         entry["classification"] = body["classification"]
 
     if has_score:
-        valid_score_types = ("condition", "modernity")
+        valid_score_types = ("condition", "modernity", "material", "functionality")
         score_type = body["score_type"]
         if score_type not in valid_score_types:
             return jsonify({"error": f"score_type must be one of: {', '.join(valid_score_types)}"}), 400
@@ -185,7 +185,7 @@ def _copy_to_ground_truth(property_id: str, filename: str) -> None:
 def _load_ai_scores() -> dict[tuple[str, str], dict[str, int | None]]:
     """Build a lookup of AI scores keyed by (property_id, filename).
 
-    Returns {(pid, fname): {"condition": int|None, "modernity": int|None}}.
+    Returns {(pid, fname): {"condition": .., "modernity": .., "material": .., "functionality": ..}}.
     """
     ai_scores: dict[tuple[str, str], dict[str, int | None]] = {}
     for path in OUT_DIR.glob("results_*.json"):
@@ -200,13 +200,17 @@ def _load_ai_scores() -> dict[tuple[str, str], dict[str, int | None]]:
             ai_scores[(pid, fname)] = {
                 "condition": img.get("condition_score"),
                 "modernity": img.get("modernity_score"),
+                "material": img.get("material_score"),
+                "functionality": img.get("functionality_score"),
             }
     return ai_scores
 
 
+SCORE_TYPES = ("condition", "modernity", "material", "functionality")
+
+
 def _compute_calibration(feedback: list[dict], ai_scores: dict) -> dict:
     """Compare human score feedback to AI scores and return calibration metrics."""
-    # Deduplicate: keep latest human score per (property_id, filename, score_type)
     latest_human: dict[tuple[str, str, str], int] = {}
     for entry in feedback:
         st = entry.get("score_type")
@@ -215,9 +219,11 @@ def _compute_calibration(feedback: list[dict], ai_scores: dict) -> dict:
             key = (entry["property_id"], entry["filename"], st)
             latest_human[key] = int(val)
 
-    diffs: dict[str, list[int]] = {"condition": [], "modernity": []}
+    diffs: dict[str, list[int]] = {st: [] for st in SCORE_TYPES}
 
     for (pid, fname, score_type), human_val in latest_human.items():
+        if score_type not in diffs:
+            continue
         ai_vals = ai_scores.get((pid, fname))
         if not ai_vals:
             continue
@@ -227,7 +233,7 @@ def _compute_calibration(feedback: list[dict], ai_scores: dict) -> dict:
         diffs[score_type].append(human_val - ai_val)
 
     result: dict[str, dict] = {}
-    for score_type in ("condition", "modernity"):
+    for score_type in SCORE_TYPES:
         d = diffs[score_type]
         n = len(d)
         if n == 0:
@@ -248,7 +254,7 @@ def _compute_calibration(feedback: list[dict], ai_scores: dict) -> dict:
                 "agreement_rate": round(agree / n * 100, 1),
             }
 
-    all_diffs = diffs["condition"] + diffs["modernity"]
+    all_diffs = [v for st in SCORE_TYPES for v in diffs[st]]
     n_all = len(all_diffs)
     if n_all > 0:
         result["overall"] = {
@@ -261,6 +267,23 @@ def _compute_calibration(feedback: list[dict], ai_scores: dict) -> dict:
         result["overall"] = {"pairs": 0, "mae": None, "bias": None, "agreement_rate": None}
 
     return result
+
+
+GRADE_SCALE = [
+    (17, "A", "Ny/eksklusiv"),
+    (13, "B", "Pæn og moderne"),
+    (9, "C", "Brugbar/neutral"),
+    (5, "D", "Forældet/slidt"),
+    (0, "E", "Renoveringskrævende"),
+]
+
+
+def _total_to_grade(total: int) -> tuple[str, str]:
+    """Map a total score (4-20) to (grade_letter, grade_label)."""
+    for threshold, letter, label in GRADE_SCALE:
+        if total >= threshold:
+            return letter, label
+    return "E", "Renoveringskrævende"
 
 
 @app.route("/api/stats", methods=["GET"])
@@ -373,6 +396,9 @@ def get_summary():
     # Per-property high-severity tracking: {property_id: {high, total}}
     property_damage: dict[str, dict[str, int]] = {}
 
+    # Room grades per property (from pass25 consolidated rooms)
+    property_room_grades: list[dict] = []
+
     for path in sorted(OUT_DIR.glob("results_*.json")):
         try:
             with open(path, encoding="utf-8") as f:
@@ -433,6 +459,32 @@ def get_summary():
                     p2_confidence_n += 1
 
         property_damage[prop_id] = {"high": prop_high, "total": prop_total_dmg}
+
+        # Build room grades from pass25 consolidated rooms
+        rooms_graded = []
+        for room in data.get("rooms", []):
+            scores = {
+                "condition": room.get("room_condition_score"),
+                "modernity": room.get("room_modernity_score"),
+                "material": room.get("room_material_score"),
+                "functionality": room.get("room_functionality_score"),
+            }
+            values = [v for v in scores.values() if v is not None]
+            if len(values) == 4:
+                total = sum(values)
+                grade, grade_label = _total_to_grade(total)
+                rooms_graded.append({
+                    "room_type": room.get("room_type", "unknown"),
+                    **scores,
+                    "total": total,
+                    "grade": grade,
+                    "grade_label": grade_label,
+                })
+        if rooms_graded:
+            property_room_grades.append({
+                "property_id": prop_id,
+                "rooms": rooms_graded,
+            })
 
     actionability_rate = (kb_actionable / kb_total * 100) if kb_total > 0 else 0
     num_proposals = len(proposal_image_counts)
@@ -496,6 +548,7 @@ def get_summary():
             "total_images": total_images,
             "avg_images_per_proposal": round(avg_images, 1),
         },
+        "room_grades": property_room_grades,
     })
 
 

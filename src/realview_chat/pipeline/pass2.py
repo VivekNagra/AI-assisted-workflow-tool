@@ -22,6 +22,8 @@ class Pass2Result:
     features: list[FeatureResult]
     condition_score: int | None
     modernity_score: int | None
+    material_score: int | None
+    functionality_score: int | None
 
 
 def run_pass2(client: LLMClient, image_data_url: str) -> Pass2Result:
@@ -39,4 +41,6 @@ def run_pass2(client: LLMClient, image_data_url: str) -> Pass2Result:
         features=features,
         condition_score=result.get("condition_score"),
         modernity_score=result.get("modernity_score"),
+        material_score=result.get("material_score"),
+        functionality_score=result.get("functionality_score"),
     )

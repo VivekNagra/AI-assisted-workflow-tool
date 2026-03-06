@@ -76,8 +76,18 @@ def pass2_schema() -> dict:
                     "minimum": 1,
                     "maximum": 5,
                 },
+                "material_score": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                },
+                "functionality_score": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                },
             },
-            "required": ["features", "condition_score", "modernity_score"],
+            "required": ["features", "condition_score", "modernity_score", "material_score", "functionality_score"],
         },
         "strict": True,
     }
@@ -120,8 +130,18 @@ def pass25_schema() -> dict:
                     "minimum": 1,
                     "maximum": 5,
                 },
+                "room_material_score": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                },
+                "room_functionality_score": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                },
             },
-            "required": ["room_type", "confirmed_features", "room_condition_score", "room_modernity_score"],
+            "required": ["room_type", "confirmed_features", "room_condition_score", "room_modernity_score", "room_material_score", "room_functionality_score"],
         },
         "strict": True,
     }

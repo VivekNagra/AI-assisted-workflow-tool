@@ -95,6 +95,30 @@ const MODERNITY_LABELS = {
   5: 'Nyt / nutidigt',
 }
 
+const MATERIAL_LABELS = {
+  1: 'Billige standardmaterialer',
+  2: 'Under middel',
+  3: 'Mellemklasse',
+  4: 'Over middel',
+  5: 'Eksklusiv / premium',
+}
+
+const FUNCTIONALITY_LABELS = {
+  1: 'Dårlig planløsning',
+  2: 'Under middel',
+  3: 'Funktionel standard',
+  4: 'Over middel',
+  5: 'Optimal indretning',
+}
+
+const GRADE_META = {
+  A: { label: 'Ny/eksklusiv', bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-300', ring: 'ring-emerald-200' },
+  B: { label: 'Pæn og moderne', bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-300', ring: 'ring-blue-200' },
+  C: { label: 'Brugbar/neutral', bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-300', ring: 'ring-amber-200' },
+  D: { label: 'Forældet/slidt', bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-300', ring: 'ring-orange-200' },
+  E: { label: 'Renoveringskrævende', bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-300', ring: 'ring-red-200' },
+}
+
 /** Return the latest human-submitted score for a given score_type (condition | modernity). */
 function getScoreForImage(allFeedback, propertyId, filename, scoreType) {
   if (!Array.isArray(allFeedback)) return null
@@ -372,30 +396,27 @@ function ImageCard({ property, image, classification, allFeedback, onClassify, o
           <p className="text-xs text-slate-400 italic">No features detected</p>
         )}
 
-        {/* Condition & Modernity score dropdowns — shown for kitchen/bathroom */}
+        {/* 4-dimension score dropdowns — shown for kitchen/bathroom */}
         {TARGET_ROOM_TYPES.includes(pass1.room_type) && (() => {
-          const pipelineCondition = image.condition_score ?? null
-          const pipelineModernity = image.modernity_score ?? null
-          const humanCondition = getScoreForImage(allFeedback, property.property_id, image.filename, 'condition')
-          const humanModernity = getScoreForImage(allFeedback, property.property_id, image.filename, 'modernity')
+          const scores = [
+            { key: 'condition', label: 'Condition (Stand)', labels: CONDITION_LABELS, pipeline: image.condition_score ?? null },
+            { key: 'modernity', label: 'Modernity (Modernitet)', labels: MODERNITY_LABELS, pipeline: image.modernity_score ?? null },
+            { key: 'material', label: 'Material (Materialekvalitet)', labels: MATERIAL_LABELS, pipeline: image.material_score ?? null },
+            { key: 'functionality', label: 'Functionality (Funktionalitet)', labels: FUNCTIONALITY_LABELS, pipeline: image.functionality_score ?? null },
+          ]
           return (
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
-              <ScoreDropdown
-                label="Condition (Stand)"
-                labels={CONDITION_LABELS}
-                pipelineScore={pipelineCondition}
-                humanScore={humanCondition}
-                readOnly={readOnly}
-                onChange={(val) => onScoreFeedback?.(image.filename, 'condition', val)}
-              />
-              <ScoreDropdown
-                label="Modernity (Modernitet)"
-                labels={MODERNITY_LABELS}
-                pipelineScore={pipelineModernity}
-                humanScore={humanModernity}
-                readOnly={readOnly}
-                onChange={(val) => onScoreFeedback?.(image.filename, 'modernity', val)}
-              />
+              {scores.map((s) => (
+                <ScoreDropdown
+                  key={s.key}
+                  label={s.label}
+                  labels={s.labels}
+                  pipelineScore={s.pipeline}
+                  humanScore={getScoreForImage(allFeedback, property.property_id, image.filename, s.key)}
+                  readOnly={readOnly}
+                  onChange={(val) => onScoreFeedback?.(image.filename, s.key, val)}
+                />
+              ))}
             </div>
           )
         })()}
@@ -679,7 +700,7 @@ function SummaryDashboard({ onNavigateToProperty }) {
   const {
     pipeline_funnel, room_distribution, actionability_rate,
     per_proposal_stats, severity_breakdown, room_damage_profiles,
-    confidence_metrics, at_risk_properties,
+    confidence_metrics, at_risk_properties, room_grades,
   } = summary
   const noiseReduction =
     pipeline_funnel.total_images > 0
@@ -750,7 +771,79 @@ function SummaryDashboard({ onNavigateToProperty }) {
             </div>
           </div>
 
-          {/* Row 2 — Room Stats + Actionability */}
+          {/* Row 2 — Category Grades */}
+          {(room_grades ?? []).length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Property Category Grades</p>
+              <p className="text-sm text-slate-400 mt-1 mb-4">
+                Final valuation grade per room based on the 4-dimension scoring model (Condition + Modernity + Material + Functionality).
+              </p>
+              <div className="space-y-4">
+                {room_grades.map((prop) => (
+                  <div key={prop.property_id}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm font-semibold text-slate-700">{prop.property_id}</span>
+                      <button
+                        type="button"
+                        onClick={() => onNavigateToProperty?.(prop.property_id)}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline"
+                      >
+                        View &rarr;
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {prop.rooms.map((room, idx) => {
+                        const gm = GRADE_META[room.grade] ?? GRADE_META.C
+                        return (
+                          <div key={`${room.room_type}-${idx}`} className={`rounded-xl border-2 p-4 ${gm.border} ${gm.bg}`}>
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide capitalize">
+                                {room.room_type}
+                              </span>
+                              <span className={`text-3xl font-black ${gm.text}`}>{room.grade}</span>
+                            </div>
+                            <p className={`text-sm font-semibold ${gm.text}`}>{gm.label}</p>
+                            <p className={`text-xs mt-1 opacity-70 ${gm.text}`}>{room.total}/20 points</p>
+                            <div className="mt-3 h-2 rounded-full bg-black/10 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-700 ${
+                                  room.grade === 'A' ? 'bg-emerald-500' :
+                                  room.grade === 'B' ? 'bg-blue-500' :
+                                  room.grade === 'C' ? 'bg-amber-500' :
+                                  room.grade === 'D' ? 'bg-orange-500' : 'bg-red-500'
+                                }`}
+                                style={{ width: `${(room.total / 20) * 100}%` }}
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-3 pt-3 border-t border-black/5 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">Condition</span>
+                                <span className="font-semibold text-slate-700">{room.condition}/5</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">Modernity</span>
+                                <span className="font-semibold text-slate-700">{room.modernity}/5</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">Material</span>
+                                <span className="font-semibold text-slate-700">{room.material}/5</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-500">Functionality</span>
+                                <span className="font-semibold text-slate-700">{room.functionality}/5</span>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Row 3 — Room Stats + Actionability */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Kitchen */}
             <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
@@ -997,10 +1090,12 @@ function SummaryDashboard({ onNavigateToProperty }) {
                 <p className="text-xs mt-1">Correct scores on image cards to see calibration metrics here.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                 {[
                   { key: 'condition', label: 'Condition (Stand)' },
                   { key: 'modernity', label: 'Modernity (Modernitet)' },
+                  { key: 'material', label: 'Material (Materialekvalitet)' },
+                  { key: 'functionality', label: 'Functionality (Funktionalitet)' },
                   { key: 'overall', label: 'Overall' },
                 ].map(({ key, label }) => {
                   const cal = calibration[key]
