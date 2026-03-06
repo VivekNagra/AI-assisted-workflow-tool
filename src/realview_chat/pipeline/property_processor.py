@@ -14,7 +14,6 @@ from realview_chat.pipeline.pass2 import Pass2Result, run_pass2
 from realview_chat.pipeline.pass25 import Pass25Result, run_pass25
 
 if TYPE_CHECKING:
-    # This assumes you have defined LLMClient Protocol in responses.py as discussed
     from realview_chat.openai_client.responses import LLMClient
 
 logger = logging.getLogger(__name__)
