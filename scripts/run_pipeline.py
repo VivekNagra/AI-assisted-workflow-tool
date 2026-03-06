@@ -124,7 +124,7 @@ def main() -> None:
     try:
         config = load_config()
         client = create_client(config)
-        print(f"Initialized client with provider: {config.llm_provider}")
+        print(f"Initialized client with model: {config.openai_model}")
     except ValueError as e:
         sys.exit(f"Configuration Error: {e}")
 
