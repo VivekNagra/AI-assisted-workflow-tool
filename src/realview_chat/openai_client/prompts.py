@@ -1,5 +1,3 @@
-"""Prompt templates for the vision pipeline."""
-
 PASS1_SYSTEM = (
     "You are an expert property inspector. "
     "Classify the room type shown in the image, whether the image is actionable, "

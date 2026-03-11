@@ -1,5 +1,3 @@
-"""Utilities for loading local image files."""
-
 from __future__ import annotations
 
 import base64

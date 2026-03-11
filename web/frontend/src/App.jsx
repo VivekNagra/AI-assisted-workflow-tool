@@ -18,10 +18,6 @@ A kitchen classified as Category B exhibits notable wear or damage that goes bey
 
 This level warrants budgeting for renovation within 1\u20135 years.`
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function getImageUrl(propertyId, filename) {
   return `${API_BASE}/images/${encodeURIComponent(propertyId)}/${encodeURIComponent(filename)}`
 }
@@ -32,7 +28,7 @@ function normalizeProperties(data) {
   return []
 }
 
-/** Split property images into target (actionable kitchen/bathroom) and review (everything else). */
+// split into target (actionable kitchens/bathrooms) vs everything else
 function splitImages(property) {
   const images = property.images ?? []
 
@@ -55,7 +51,6 @@ function splitImages(property) {
   return { target, review }
 }
 
-/** Return the latest image-level classification from feedback (correct | fp | fn). */
 function getClassificationForImage(allFeedback, propertyId, filename) {
   if (!Array.isArray(allFeedback)) return null
   for (let i = allFeedback.length - 1; i >= 0; i--) {
@@ -67,7 +62,6 @@ function getClassificationForImage(allFeedback, propertyId, filename) {
   return null
 }
 
-/** Return the latest feature-level verdict from feedback (agree | disagree). */
 function getVerdictForFeature(allFeedback, propertyId, filename, featureId) {
   if (!Array.isArray(allFeedback) || !filename) return null
   for (let i = allFeedback.length - 1; i >= 0; i--) {
@@ -119,7 +113,6 @@ const GRADE_META = {
   E: { label: 'Renoveringskrævende', bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-300', ring: 'ring-red-200' },
 }
 
-/** Return the latest human-submitted score for a given score_type (condition | modernity). */
 function getScoreForImage(allFeedback, propertyId, filename, scoreType) {
   if (!Array.isArray(allFeedback)) return null
   for (let i = allFeedback.length - 1; i >= 0; i--) {
@@ -136,7 +129,7 @@ function getScoreForImage(allFeedback, propertyId, filename, scoreType) {
   return null
 }
 
-/** Compute benchmarking stats from feedback (client-side, deduped to latest per image). */
+// dedup to latest classification per image, then tally
 function computeStats(allFeedback) {
   const latest = new Map()
   for (const e of allFeedback) {
@@ -155,16 +148,11 @@ function computeStats(allFeedback) {
   return { correct, fp, fn, total: correct + fp + fn, precision, recall }
 }
 
-/** Return Tailwind color classes based on percentage thresholds. */
 function rateColor(pct) {
   if (pct >= 80) return { text: 'text-emerald-700', bg: 'bg-emerald-500', card: 'border-emerald-200 bg-emerald-50' }
   if (pct >= 50) return { text: 'text-amber-700', bg: 'bg-amber-500', card: 'border-amber-200 bg-amber-50' }
   return { text: 'text-red-700', bg: 'bg-red-500', card: 'border-red-200 bg-red-50' }
 }
-
-// ---------------------------------------------------------------------------
-// Small UI components
-// ---------------------------------------------------------------------------
 
 const CLASSIFICATION_META = {
   correct: { label: 'Correct', shortLabel: '\u2713 Correct', bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200', activeBg: 'bg-emerald-600', activeText: 'text-white', ring: 'ring-emerald-300' },
@@ -182,7 +170,6 @@ function ClassificationBadge({ classification }) {
   )
 }
 
-/** Compact feature badge showing feature_id + confidence. */
 function FeatureBadge({ feature }) {
   const conf = feature.confidence ?? 0
   const pct = (conf * 100).toFixed(0)
@@ -200,7 +187,6 @@ function FeatureBadge({ feature }) {
   )
 }
 
-/** Dropdown for condition/modernity scoring with visual correction indicator. */
 function ScoreDropdown({ label, labels, pipelineScore, humanScore, onChange, readOnly }) {
   const effective = humanScore ?? pipelineScore ?? null
   const corrected = humanScore != null && humanScore !== pipelineScore
@@ -237,10 +223,6 @@ function ScoreDropdown({ label, labels, pipelineScore, humanScore, onChange, rea
   )
 }
 
-// ---------------------------------------------------------------------------
-// ImageCard
-// ---------------------------------------------------------------------------
-
 function ImageCard({ property, image, classification, allFeedback, onClassify, onFeatureFeedback, onScoreFeedback, readOnly = false }) {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [lightbox, setLightbox] = useState(false)
@@ -264,7 +246,6 @@ function ImageCard({ property, image, classification, allFeedback, onClassify, o
 
   return (
     <div className={`rounded-xl border shadow-sm overflow-hidden bg-white transition-all ${cardBorder}`}>
-      {/* Image — clickable to enlarge */}
       <div className="relative cursor-pointer" onClick={() => setLightbox(true)}>
         <img
           src={getImageUrl(property.property_id, image.filename)}
@@ -280,13 +261,11 @@ function ImageCard({ property, image, classification, allFeedback, onClassify, o
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent px-3 py-2">
           <p className="text-white text-xs font-medium truncate">{image.filename}</p>
         </div>
-        {/* Zoom hint */}
         <div className="absolute top-2 left-2 bg-black/40 text-white/80 rounded-md px-1.5 py-0.5 text-xs opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
           Click to enlarge
         </div>
       </div>
 
-      {/* Lightbox overlay */}
       {lightbox && (
         <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-6" onClick={() => setLightbox(false)}>
           <button
@@ -306,7 +285,6 @@ function ImageCard({ property, image, classification, allFeedback, onClassify, o
         </div>
       )}
 
-      {/* Metadata */}
       <div className="p-3 space-y-2.5">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-indigo-50 text-indigo-700 capitalize">
@@ -324,7 +302,6 @@ function ImageCard({ property, image, classification, allFeedback, onClassify, o
           </span>
         </div>
 
-        {/* AI findings — always visible as badges */}
         {features.length > 0 ? (
           <div className="space-y-2">
             <div className="flex flex-wrap gap-1.5">
@@ -333,7 +310,6 @@ function ImageCard({ property, image, classification, allFeedback, onClassify, o
               ))}
             </div>
 
-            {/* Expandable detail panel */}
             <button
               type="button"
               onClick={() => setDetailsOpen(!detailsOpen)}
@@ -396,7 +372,6 @@ function ImageCard({ property, image, classification, allFeedback, onClassify, o
           <p className="text-xs text-slate-400 italic">No features detected</p>
         )}
 
-        {/* 4-dimension score dropdowns — shown for kitchen/bathroom */}
         {TARGET_ROOM_TYPES.includes(pass1.room_type) && (() => {
           const scores = [
             { key: 'condition', label: 'Condition (Stand)', labels: CONDITION_LABELS, pipeline: image.condition_score ?? null },
@@ -421,7 +396,6 @@ function ImageCard({ property, image, classification, allFeedback, onClassify, o
           )
         })()}
 
-        {/* Classification buttons — hidden in readOnly mode */}
         {!readOnly && (
           <div className="flex gap-2 pt-2 border-t border-slate-100">
             {(['correct', 'fp', 'fn']).map((cls) => {
@@ -449,10 +423,6 @@ function ImageCard({ property, image, classification, allFeedback, onClassify, o
   )
 }
 
-// ---------------------------------------------------------------------------
-// Reference panel (modal)
-// ---------------------------------------------------------------------------
-
 function ReferencePanel({ onClose }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -470,10 +440,6 @@ function ReferencePanel({ onClose }) {
     </div>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Benchmarking Report
-// ---------------------------------------------------------------------------
 
 function BenchmarkingReport({ allFeedback, onReset }) {
   const stats = useMemo(() => computeStats(allFeedback), [allFeedback])
@@ -525,28 +491,24 @@ function BenchmarkingReport({ allFeedback, onReset }) {
         )}
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {/* Verified Leads */}
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
           <p className="text-xs font-medium text-emerald-600 uppercase tracking-wide">Verified Leads</p>
           <p className="text-3xl font-bold text-emerald-800 mt-1">{stats.correct}</p>
           <p className="text-xs text-emerald-600/70 mt-1">{stats.total} I alt</p>
         </div>
 
-        {/* False Positives */}
         <div className="rounded-xl border border-red-200 bg-red-50 p-4">
           <p className="text-xs font-medium text-red-600 uppercase tracking-wide">False Positives</p>
           <p className="text-3xl font-bold text-red-800 mt-1">{stats.fp}</p>
           <p className="text-xs text-red-600/70 mt-1">AI siger det er et køkken eller bad når det ikke er</p>
         </div>
 
-        {/* False Negatives */}
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
           <p className="text-xs font-medium text-amber-600 uppercase tracking-wide">False Negatives</p>
           <p className="text-3xl font-bold text-amber-800 mt-1">{stats.fn}</p>
           <p className="text-xs text-amber-600/70 mt-1">AI har overset et køkken eller bad</p>
         </div>
 
-        {/* Precision */}
         <div className={`rounded-xl border p-4 ${precColor.card}`}>
           <p className={`text-xs font-medium uppercase tracking-wide ${precColor.text}`}>Precision</p>
           <p className={`text-3xl font-bold mt-1 ${precColor.text}`}>{stats.precision.toFixed(1)}%</p>
@@ -559,7 +521,6 @@ function BenchmarkingReport({ allFeedback, onReset }) {
           <p className={`text-xs mt-1 opacity-70 ${precColor.text}`}>Correct / (Correct + FP)</p>
         </div>
 
-        {/* Recall */}
         <div className={`rounded-xl border p-4 ${recColor.card}`}>
           <p className={`text-xs font-medium uppercase tracking-wide ${recColor.text}`}>Recall</p>
           <p className={`text-3xl font-bold mt-1 ${recColor.text}`}>{stats.recall.toFixed(1)}%</p>
@@ -576,12 +537,7 @@ function BenchmarkingReport({ allFeedback, onReset }) {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Ground Truth Master Gallery
-// ---------------------------------------------------------------------------
-
 function GroundTruthGallery({ properties, allFeedback, onNavigateToProperty, onReset }) {
-  /** Collect every image across all properties that is classified as "correct". */
   const approvedImages = useMemo(() => {
     const results = []
     for (const prop of properties) {
@@ -597,7 +553,6 @@ function GroundTruthGallery({ properties, allFeedback, onNavigateToProperty, onR
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
       <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
@@ -613,10 +568,8 @@ function GroundTruthGallery({ properties, allFeedback, onNavigateToProperty, onR
         </div>
       </div>
 
-      {/* Benchmarking Report */}
       <BenchmarkingReport allFeedback={allFeedback} onReset={onReset} />
 
-      {/* Gallery */}
       <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
         {approvedImages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-slate-400">
@@ -627,7 +580,6 @@ function GroundTruthGallery({ properties, allFeedback, onNavigateToProperty, onR
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {approvedImages.map(({ property, image }) => (
               <div key={`${property.property_id}-${image.filename}`}>
-                {/* Clickable property link */}
                 <div className="px-1 pb-1">
                   <button
                     type="button"
@@ -655,10 +607,6 @@ function GroundTruthGallery({ properties, allFeedback, onNavigateToProperty, onR
     </div>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Summary Dashboard
-// ---------------------------------------------------------------------------
 
 function SummaryDashboard({ onNavigateToProperty }) {
   const [summary, setSummary] = useState(null)
@@ -710,7 +658,6 @@ function SummaryDashboard({ onNavigateToProperty }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
       <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
@@ -726,13 +673,10 @@ function SummaryDashboard({ onNavigateToProperty }) {
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
         <div className="max-w-5xl mx-auto space-y-6">
 
-          {/* Row 1 — Funnel + Per-Proposal Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Noise Reduction */}
             <div className="md:col-span-2 rounded-xl border border-indigo-200 bg-indigo-50 p-5">
               <p className="text-xs font-medium text-indigo-600 uppercase tracking-wide">Noise Reduction</p>
               <p className="text-sm text-indigo-600/80 mt-1">
@@ -750,7 +694,6 @@ function SummaryDashboard({ onNavigateToProperty }) {
               </p>
             </div>
 
-            {/* Per-Proposal Average */}
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Per Property</p>
               <p className="text-sm text-slate-400 mt-1">
@@ -771,7 +714,6 @@ function SummaryDashboard({ onNavigateToProperty }) {
             </div>
           </div>
 
-          {/* Row 2 — Category Grades */}
           {(room_grades ?? []).length > 0 && (
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Property Category Grades</p>
@@ -843,9 +785,7 @@ function SummaryDashboard({ onNavigateToProperty }) {
             </div>
           )}
 
-          {/* Row 3 — Room Stats + Actionability */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* Kitchen */}
             <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
               <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Kitchens</p>
               <p className="text-sm text-blue-600/80 mt-1">
@@ -859,7 +799,6 @@ function SummaryDashboard({ onNavigateToProperty }) {
               </p>
             </div>
 
-            {/* Bathroom */}
             <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
               <p className="text-xs font-medium text-blue-600 uppercase tracking-wide">Bathrooms</p>
               <p className="text-sm text-blue-600/80 mt-1">
@@ -873,7 +812,6 @@ function SummaryDashboard({ onNavigateToProperty }) {
               </p>
             </div>
 
-            {/* Actionability */}
             {(() => {
               const aColor = rateColor(actionability_rate.rate_percent)
               return (
@@ -902,9 +840,7 @@ function SummaryDashboard({ onNavigateToProperty }) {
             })()}
           </div>
 
-          {/* Row 3 — Severity + Confidence */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Severity Distribution */}
             <div className="md:col-span-2 rounded-xl border border-slate-200 bg-white p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Severity Distribution</p>
               <p className="text-sm text-slate-400 mt-1 mb-4">
@@ -914,7 +850,6 @@ function SummaryDashboard({ onNavigateToProperty }) {
                 <p className="text-sm text-slate-400 italic">No damages detected yet.</p>
               ) : (
                 <>
-                  {/* Stacked bar */}
                   <div className="flex h-5 rounded-full overflow-hidden">
                     {severity_breakdown.high > 0 && (
                       <div className="bg-red-500 transition-all duration-700" style={{ width: `${(severity_breakdown.high / severityTotal) * 100}%` }} />
@@ -926,7 +861,6 @@ function SummaryDashboard({ onNavigateToProperty }) {
                       <div className="bg-blue-400 transition-all duration-700" style={{ width: `${(severity_breakdown.low / severityTotal) * 100}%` }} />
                     )}
                   </div>
-                  {/* Legend */}
                   <div className="flex items-center gap-5 mt-3 text-sm">
                     <span className="flex items-center gap-1.5">
                       <span className="w-3 h-3 rounded-sm bg-red-500" />
@@ -948,7 +882,6 @@ function SummaryDashboard({ onNavigateToProperty }) {
               )}
             </div>
 
-            {/* Confidence Stats */}
             <div className="space-y-4">
               <div className="rounded-xl border border-slate-200 bg-white p-5">
                 <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Avg. Classification Confidence</p>
@@ -973,9 +906,7 @@ function SummaryDashboard({ onNavigateToProperty }) {
             </div>
           </div>
 
-          {/* Row 4 — Dual Damage Leaderboards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Kitchen damages */}
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Top Kitchen Damages</p>
               <p className="text-sm text-slate-400 mt-1 mb-4">
@@ -1004,7 +935,6 @@ function SummaryDashboard({ onNavigateToProperty }) {
               )}
             </div>
 
-            {/* Bathroom damages */}
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Top Bathroom Damages</p>
               <p className="text-sm text-slate-400 mt-1 mb-4">
@@ -1034,7 +964,6 @@ function SummaryDashboard({ onNavigateToProperty }) {
             </div>
           </div>
 
-          {/* Row 5 — At-Risk Properties */}
           {(at_risk_properties ?? []).length > 0 && (
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Priority Action List</p>
@@ -1078,7 +1007,6 @@ function SummaryDashboard({ onNavigateToProperty }) {
             </div>
           )}
 
-          {/* Row 6 — Score Calibration */}
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Score Calibration</p>
             <p className="text-sm text-slate-400 mt-1 mb-4">
@@ -1164,10 +1092,6 @@ function SummaryDashboard({ onNavigateToProperty }) {
   )
 }
 
-// ---------------------------------------------------------------------------
-// PropertyReviewView
-// ---------------------------------------------------------------------------
-
 const CLASSIFICATION_TABS = [
   { id: 'all_results', label: 'All Results', icon: null },
   { id: 'correct', label: 'Ground Truth', icon: '\u2713' },
@@ -1191,7 +1115,6 @@ function PropertyReviewView({ property, allFeedback, onFeedbackSubmit }) {
   const { target, review } = useMemo(() => splitImages(property), [property])
   const allImages = useMemo(() => [...target, ...review], [target, review])
 
-  // When a classification tab is active, we show from ALL images; otherwise room tab applies.
   const baseImages = useMemo(() => {
     if (classTab !== 'all_results') return allImages
     return roomTab === 'target' ? target : review
@@ -1199,12 +1122,10 @@ function PropertyReviewView({ property, allFeedback, onFeedbackSubmit }) {
 
   const filteredImages = useMemo(() => {
     return baseImages.filter((img) => {
-      // Classification tab filter
       if (classTab !== 'all_results') {
         const cls = getClassificationForImage(allFeedback, property.property_id, img.filename)
         if (cls !== classTab) return false
       }
-      // Secondary filters
       if (filter === 'unreviewed') {
         return !getClassificationForImage(allFeedback, property.property_id, img.filename)
       }
@@ -1218,7 +1139,6 @@ function PropertyReviewView({ property, allFeedback, onFeedbackSubmit }) {
     })
   }, [baseImages, classTab, filter, allFeedback, property])
 
-  // Stats
   const classifiedCount = useMemo(() => {
     return allImages.filter((img) =>
       getClassificationForImage(allFeedback, property.property_id, img.filename),
@@ -1260,12 +1180,10 @@ function PropertyReviewView({ property, allFeedback, onFeedbackSubmit }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Classification tabs row */}
       <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-2">
         <div className="flex items-center gap-1">
           {CLASSIFICATION_TABS.map((tab) => {
             const active = classTab === tab.id
-            // Count for each classification tab
             let count = null
             if (tab.id !== 'all_results') {
               count = allImages.filter(
@@ -1300,10 +1218,8 @@ function PropertyReviewView({ property, allFeedback, onFeedbackSubmit }) {
         </div>
       </div>
 
-      {/* Toolbar: room tabs + filters + stats */}
       <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-2.5">
         <div className="flex items-center justify-between gap-4 flex-wrap">
-          {/* Room tabs — only shown when classTab is "all_results" */}
           {classTab === 'all_results' ? (
             <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
               <button
@@ -1337,7 +1253,6 @@ function PropertyReviewView({ property, allFeedback, onFeedbackSubmit }) {
             </div>
           )}
 
-          {/* Filters */}
           <div className="flex items-center gap-1.5">
             {FILTER_OPTIONS.map((f) => (
               <button
@@ -1355,7 +1270,6 @@ function PropertyReviewView({ property, allFeedback, onFeedbackSubmit }) {
             ))}
           </div>
 
-          {/* Stats + Reference */}
           <div className="flex items-center gap-3">
             <span className="text-xs text-slate-500">
               {classifiedCount}/{allImages.length} classified
@@ -1371,7 +1285,6 @@ function PropertyReviewView({ property, allFeedback, onFeedbackSubmit }) {
         </div>
       </div>
 
-      {/* Image grid */}
       <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
         {filteredImages.length === 0 ? (
           <div className="flex items-center justify-center h-64 text-slate-400 text-sm">
@@ -1404,17 +1317,13 @@ function PropertyReviewView({ property, allFeedback, onFeedbackSubmit }) {
   )
 }
 
-// ---------------------------------------------------------------------------
-// App
-// ---------------------------------------------------------------------------
-
 function App() {
   const [properties, setProperties] = useState([])
   const [selectedProperty, setSelectedProperty] = useState(null)
   const [allFeedback, setAllFeedback] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [viewMode, setViewMode] = useState('property') // 'property' | 'ground_truth' | 'summary'
+  const [viewMode, setViewMode] = useState('property')
 
   useEffect(() => {
     fetch(`${API_BASE}/feedback`)
@@ -1467,13 +1376,11 @@ function App() {
 
   return (
     <div className="flex h-screen bg-slate-100 text-slate-900">
-      {/* Sidebar */}
       <aside className="w-64 shrink-0 border-r border-slate-200 bg-white shadow-sm flex flex-col">
         <div className="p-4 border-b border-slate-200">
           <h2 className="text-lg font-semibold text-slate-800">RealView</h2>
         </div>
 
-        {/* Master Gallery button */}
         <div className="px-2 pt-2 space-y-1">
           <button
             type="button"
@@ -1499,7 +1406,6 @@ function App() {
           </button>
         </div>
 
-        {/* Properties */}
         <div className="px-4 pt-4 pb-1">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Properties</h3>
         </div>
@@ -1531,7 +1437,6 @@ function App() {
         </nav>
       </aside>
 
-      {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0">
         {viewMode === 'summary' ? (
           <SummaryDashboard onNavigateToProperty={selectPropertyById} />

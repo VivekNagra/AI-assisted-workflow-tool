@@ -1,5 +1,3 @@
-"""Pipeline pass 2.5: room consolidation."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass

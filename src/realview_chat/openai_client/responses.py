@@ -1,5 +1,3 @@
-"""OpenAI Responses API wrapper."""
-
 from __future__ import annotations
 
 import json
@@ -15,14 +13,12 @@ from realview_chat.config import AppConfig
 
 
 class LLMClient(Protocol):
-    """Interface for LLM clients."""
     def pass1(self, image_data_url: str) -> dict[str, Any]: ...
     def pass2(self, image_data_url: str) -> dict[str, Any]: ...
     def pass25(self, room_type: str, image_data_urls: list[str]) -> dict[str, Any]: ...
 
 
 class OpenAIBackend:
-    """Client for OpenAI's Chat Completions API."""
     def __init__(self, config: AppConfig, rate_limiter: RateLimiter) -> None:
         self._client = OpenAI(api_key=config.openai_api_key)
         self._model = config.openai_model
@@ -94,6 +90,5 @@ class OpenAIBackend:
 
 
 def create_client(config: AppConfig) -> LLMClient:
-    """Factory to create the LLM client."""
     limiter = RateLimiter(config.requests_per_minute)
     return OpenAIBackend(config, limiter)

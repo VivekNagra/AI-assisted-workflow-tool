@@ -1,5 +1,3 @@
-"""Pipeline pass 2: feature detection."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass

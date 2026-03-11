@@ -1,7 +1,3 @@
-"""
-Flask backend for the property inspection review tool.
-Serves pipeline results, local images, and accepts feedback.
-"""
 import json
 import shutil
 from collections import Counter
@@ -11,13 +7,11 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-# Project root (parent of web/)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 OUT_DIR = PROJECT_ROOT / "out"
 FEEDBACK_PATH = OUT_DIR / "feedback.json"
 GROUND_TRUTH_DIR = OUT_DIR / "ground_truth"
 
-# Centralized cases storage: each property has a folder case_<property_id> (inside app root so path works for any install location)
 CASES_ROOT = PROJECT_ROOT / "cases"
 
 app = Flask(__name__)
@@ -26,7 +20,6 @@ CORS(app)
 
 @app.route("/api/properties", methods=["GET"])
 def get_properties():
-    """Scan OUT_DIR for results_*.json (and legacy results.json); load each and return a list of property objects."""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     properties = []
     for path in sorted(OUT_DIR.glob("results_*.json")):
@@ -36,7 +29,7 @@ def get_properties():
             properties.append(data)
         except (json.JSONDecodeError, OSError):
             continue
-    # Legacy: if no per-property files, try single results.json
+    # fallback for legacy single-file format
     if not properties and (OUT_DIR / "results.json").exists():
         try:
             with open(OUT_DIR / "results.json", encoding="utf-8") as f:
@@ -50,7 +43,6 @@ def get_properties():
 
 @app.route("/api/images/<property_id>/<path:filename>", methods=["GET"])
 def serve_image(property_id, filename):
-    """Serve an image from CASES_ROOT/case_<property_id>/<filename>. Compatible with numerical property_id (e.g. 2203177)."""
     base = Path(filename).name
     if base != filename:
         return jsonify({"error": "Invalid filename"}), 400
@@ -66,7 +58,6 @@ def serve_image(property_id, filename):
 
 @app.route("/api/feedback", methods=["GET"])
 def get_feedback():
-    """Return the entire content of out/feedback.json (list of feedback entries)."""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     if not FEEDBACK_PATH.exists():
         return jsonify([])
@@ -80,16 +71,6 @@ def get_feedback():
 
 @app.route("/api/feedback", methods=["POST"])
 def post_feedback():
-    """Accept feedback and append to out/feedback.json.
-
-    Supports three kinds of feedback:
-      1. Feature-level verdict: requires property_id, filename, feature_id, verdict
-      2. Image-level classification: requires property_id, filename, classification
-         where classification is one of: correct, fp, fn
-      3. Score feedback: requires property_id, filename, score_type, value
-         score_type is one of: condition, modernity
-         value is an integer 1–5
-    """
     body = request.get_json(silent=True)
     if not body:
         return jsonify({"error": "JSON body required"}), 400
@@ -134,7 +115,6 @@ def post_feedback():
         entry["score_type"] = score_type
         entry["value"] = value
         entry["timestamp"] = datetime.now(timezone.utc).isoformat()
-    # Load existing feedback, append, write
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     if FEEDBACK_PATH.exists():
         try:
@@ -151,7 +131,7 @@ def post_feedback():
     except OSError as e:
         return jsonify({"error": str(e)}), 500
 
-    # Ground Truth: copy "correct" images into out/ground_truth/
+    # approved images get copied to ground truth folder
     if entry.get("classification") == "correct":
         _copy_to_ground_truth(entry["property_id"], entry["filename"])
 
@@ -159,12 +139,6 @@ def post_feedback():
 
 
 def _copy_to_ground_truth(property_id: str, filename: str) -> None:
-    """Copy an approved image into out/ground_truth/{property_id}_{filename}.
-
-    Uses shutil.copy2 to preserve metadata. Silently skips if the source
-    image cannot be found so the feedback request still succeeds.
-    """
-    # Resolve source path (same logic as serve_image)
     base = Path(filename).name
     case_folder = property_id if str(property_id).startswith("case_") else f"case_{property_id}"
     src = CASES_ROOT / case_folder / base
@@ -183,10 +157,6 @@ def _copy_to_ground_truth(property_id: str, filename: str) -> None:
 
 
 def _load_ai_scores() -> dict[tuple[str, str], dict[str, int | None]]:
-    """Build a lookup of AI scores keyed by (property_id, filename).
-
-    Returns {(pid, fname): {"condition": .., "modernity": .., "material": .., "functionality": ..}}.
-    """
     ai_scores: dict[tuple[str, str], dict[str, int | None]] = {}
     for path in OUT_DIR.glob("results_*.json"):
         try:
@@ -210,7 +180,6 @@ SCORE_TYPES = ("condition", "modernity", "material", "functionality")
 
 
 def _compute_calibration(feedback: list[dict], ai_scores: dict) -> dict:
-    """Compare human score feedback to AI scores and return calibration metrics."""
     latest_human: dict[tuple[str, str, str], int] = {}
     for entry in feedback:
         st = entry.get("score_type")
@@ -279,7 +248,6 @@ GRADE_SCALE = [
 
 
 def _total_to_grade(total: int) -> tuple[str, str]:
-    """Map a total score (4-20) to (grade_letter, grade_label)."""
     for threshold, letter, label in GRADE_SCALE:
         if total >= threshold:
             return letter, label
@@ -288,7 +256,6 @@ def _total_to_grade(total: int) -> tuple[str, str]:
 
 @app.route("/api/stats", methods=["GET"])
 def get_stats():
-    """Compute benchmarking statistics and calibration metrics."""
     feedback = []
     if FEEDBACK_PATH.exists():
         try:
@@ -297,7 +264,7 @@ def get_stats():
         except (json.JSONDecodeError, OSError):
             feedback = []
 
-    # Deduplicate: keep only the latest classification per (property_id, filename)
+    # dedup: only keep the latest classification per image
     latest: dict[tuple[str, str], str] = {}
     for entry in feedback:
         cls = entry.get("classification")
@@ -327,8 +294,6 @@ def get_stats():
 
 @app.route("/api/reset", methods=["DELETE"])
 def reset_benchmarking():
-    """Clear feedback.json and the ground_truth folder. Destructive action."""
-    # Clear feedback
     try:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         with open(FEEDBACK_PATH, "w", encoding="utf-8") as f:
@@ -336,7 +301,6 @@ def reset_benchmarking():
     except OSError as e:
         return jsonify({"error": f"Failed to clear feedback: {e}"}), 500
 
-    # Clear ground truth folder
     try:
         if GROUND_TRUTH_DIR.exists():
             shutil.rmtree(GROUND_TRUTH_DIR)
@@ -349,7 +313,6 @@ def reset_benchmarking():
 
 @app.route("/api/ground_truth", methods=["GET"])
 def get_ground_truth():
-    """Return a list of filenames present in the out/ground_truth/ folder."""
     GROUND_TRUTH_DIR.mkdir(parents=True, exist_ok=True)
     image_extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff"}
     files = []
@@ -361,7 +324,6 @@ def get_ground_truth():
 
 @app.route("/api/ground_truth/<path:filename>", methods=["GET"])
 def serve_ground_truth_image(filename):
-    """Serve an image from the ground truth folder."""
     base = Path(filename).name
     if base != filename:
         return jsonify({"error": "Invalid filename"}), 400
@@ -373,7 +335,6 @@ def serve_ground_truth_image(filename):
 
 @app.route("/api/summary", methods=["GET"])
 def get_summary():
-    """Aggregate data from all results JSON files into a pipeline summary."""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     total_images = 0
@@ -393,10 +354,7 @@ def get_summary():
     p2_confidence_sum = 0.0
     p2_confidence_n = 0
 
-    # Per-property high-severity tracking: {property_id: {high, total}}
     property_damage: dict[str, dict[str, int]] = {}
-
-    # Room grades per property (from pass25 consolidated rooms)
     property_room_grades: list[dict] = []
 
     for path in sorted(OUT_DIR.glob("results_*.json")):
@@ -460,7 +418,6 @@ def get_summary():
 
         property_damage[prop_id] = {"high": prop_high, "total": prop_total_dmg}
 
-        # Build room grades from pass25 consolidated rooms
         rooms_graded = []
         for room in data.get("rooms", []):
             scores = {
@@ -553,5 +510,4 @@ def get_summary():
 
 
 if __name__ == "__main__":
-    # Use 5001 to avoid conflict with macOS AirPlay Receiver on port 5000 (which returns 403 for API requests)
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=5001)  # 5001 bc macOS AirPlay hogs 5000

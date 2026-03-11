@@ -1,5 +1,3 @@
-"""Property processing pipeline."""
-
 from __future__ import annotations
 
 import logging
@@ -38,11 +36,9 @@ def _process_images(property_id: str, image_paths: list[Path], client: LLMClient
 
     for path, data_url in images_with_urls:
         logger.info("Running pass1 for %s", path.name)
-        # run_pass1 internally calls client.pass1()
-        pass1 = run_pass1(client, data_url) # type: ignore
+        pass1 = run_pass1(client, data_url)  # type: ignore
         pass1_results[path.name] = pass1
 
-        # Filtrér uønskede rooms herinde i løkken)
         if not pass1.actionable or pass1.room_type not in ALLOWED_ROOMS:
             logger.info(
                 "Skipping pass2 for %s (room_type=%s)", path.name, pass1.room_type
@@ -50,10 +46,10 @@ def _process_images(property_id: str, image_paths: list[Path], client: LLMClient
             continue
 
         logger.info("Running pass2 for %s", path.name)
-        # run_pass2 internally calls client.pass2()
-        pass2 = run_pass2(client, data_url) # type: ignore
+        pass2 = run_pass2(client, data_url)  # type: ignore
         pass2_results[path.name] = pass2
 
+    # group actionable images by room type for pass2.5 consolidation
     room_groups: dict[str, list[tuple[Path, str]]] = {}
     for path, data_url in images_with_urls:
         pass1 = pass1_results.get(path.name)
@@ -71,11 +67,10 @@ def _process_images(property_id: str, image_paths: list[Path], client: LLMClient
         if len(items) < 2:
             logger.info("Skipping pass2.5 for room %s due to insufficient images", room_type)
             continue
-        for chunk in _chunk_images(items, 4):
+        for chunk in _chunk_images(items, 4):  # max 4 images per API call
             image_data_urls = [data_url for _, data_url in chunk]
             logger.info("Running pass2.5 for room %s with %d images", room_type, len(chunk))
-            # run_pass25 internally calls client.pass25()
-            pass25_results.append(run_pass25(client, room_type, image_data_urls)) # type: ignore
+            pass25_results.append(run_pass25(client, room_type, image_data_urls))  # type: ignore
 
     images = []
     for filename, pass1 in pass1_results.items():
@@ -108,12 +103,10 @@ def _process_images(property_id: str, image_paths: list[Path], client: LLMClient
 def process_property_from_folder(
     images_dir: Path | str, property_id: str, client: LLMClient
 ) -> dict:
-    """Run the pipeline for a property using images from a local folder."""
     folder_path = Path(images_dir)
     image_paths = list_image_files(folder_path)
     logger.info("Found %d images in %s", len(image_paths), folder_path)
     return _process_images(property_id, image_paths, client)
 
 
-# Backwards compatibility alias
-process_property = process_property_from_folder
+process_property = process_property_from_folder  # legacy alias

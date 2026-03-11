@@ -1,5 +1,3 @@
-"""Configuration loading for Realview Chat."""
-
 from __future__ import annotations
 
 import os

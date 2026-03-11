@@ -1,5 +1,3 @@
-"""Structured output schemas for OpenAI Responses API."""
-
 from __future__ import annotations
 
 ROOM_TYPES = [
