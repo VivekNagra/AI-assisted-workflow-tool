@@ -1,5 +1,3 @@
-"""Retry helper with exponential backoff."""
-
 from __future__ import annotations
 
 import logging

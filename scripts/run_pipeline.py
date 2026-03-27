@@ -1,5 +1,3 @@
-"""CLI to run the full RealView Chat pipeline on a folder of images."""
-
 from __future__ import annotations
 
 import argparse
@@ -8,14 +6,11 @@ import logging
 import sys
 from pathlib import Path
 
-# Project root (realview_chat); cases live inside it so path works for any install location
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-# Centralized cases storage: each property has a folder case_<property_id>
 CASES_ROOT = PROJECT_ROOT / "cases"
 OUT_DIR = PROJECT_ROOT / "out"
 
-# Ensure the src directory is in the python path if running from root
-sys.path.append(str(PROJECT_ROOT / "src"))
+sys.path.append(str(PROJECT_ROOT / "src"))  # so imports work when running from repo root
 
 from realview_chat.config import load_config
 from realview_chat.openai_client.responses import create_client
@@ -40,7 +35,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def process_one(client, images_dir: Path, property_id: str, target_out: Path) -> bool:
-    """Run pipeline for one property; write target_out. Returns True on success."""
     try:
         print(f"Processing images in: {images_dir}...")
         result = process_property_from_folder(
@@ -60,7 +54,6 @@ def process_one(client, images_dir: Path, property_id: str, target_out: Path) ->
 
 
 def run_scan_mode(client) -> None:
-    """Scan CASES_ROOT for case_* folders; process any that don't have results_*.json yet."""
     if not CASES_ROOT.exists() or not CASES_ROOT.is_dir():
         sys.exit(f"Error: CASES_ROOT not found: {CASES_ROOT}")
 
@@ -91,7 +84,6 @@ def run_scan_mode(client) -> None:
 
 
 def run_single_mode(client, images_dir_arg: str) -> None:
-    """Process a single folder: by path or by property_id (resolved to CASES_ROOT/case_<id>/)."""
     images_dir_arg = images_dir_arg.strip()
     if "/" in images_dir_arg or "\\" in images_dir_arg:
         images_dir = Path(images_dir_arg).resolve()
@@ -124,7 +116,7 @@ def main() -> None:
     try:
         config = load_config()
         client = create_client(config)
-        print(f"Initialized client with provider: {config.llm_provider}")
+        print(f"Initialized client with model: {config.openai_model}")
     except ValueError as e:
         sys.exit(f"Configuration Error: {e}")
 

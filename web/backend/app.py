@@ -1,22 +1,17 @@
-"""
-Flask backend for the property inspection review tool.
-Serves pipeline results, local images, and accepts feedback.
-"""
 import json
 import shutil
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-# Project root (parent of web/)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 OUT_DIR = PROJECT_ROOT / "out"
 FEEDBACK_PATH = OUT_DIR / "feedback.json"
 GROUND_TRUTH_DIR = OUT_DIR / "ground_truth"
 
-# Centralized cases storage: each property has a folder case_<property_id> (inside app root so path works for any install location)
 CASES_ROOT = PROJECT_ROOT / "cases"
 
 app = Flask(__name__)
@@ -25,7 +20,6 @@ CORS(app)
 
 @app.route("/api/properties", methods=["GET"])
 def get_properties():
-    """Scan OUT_DIR for results_*.json (and legacy results.json); load each and return a list of property objects."""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     properties = []
     for path in sorted(OUT_DIR.glob("results_*.json")):
@@ -35,7 +29,7 @@ def get_properties():
             properties.append(data)
         except (json.JSONDecodeError, OSError):
             continue
-    # Legacy: if no per-property files, try single results.json
+    # fallback for legacy single-file format
     if not properties and (OUT_DIR / "results.json").exists():
         try:
             with open(OUT_DIR / "results.json", encoding="utf-8") as f:
@@ -49,7 +43,6 @@ def get_properties():
 
 @app.route("/api/images/<property_id>/<path:filename>", methods=["GET"])
 def serve_image(property_id, filename):
-    """Serve an image from CASES_ROOT/case_<property_id>/<filename>. Compatible with numerical property_id (e.g. 2203177)."""
     base = Path(filename).name
     if base != filename:
         return jsonify({"error": "Invalid filename"}), 400
@@ -65,7 +58,6 @@ def serve_image(property_id, filename):
 
 @app.route("/api/feedback", methods=["GET"])
 def get_feedback():
-    """Return the entire content of out/feedback.json (list of feedback entries)."""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     if not FEEDBACK_PATH.exists():
         return jsonify([])
@@ -79,18 +71,10 @@ def get_feedback():
 
 @app.route("/api/feedback", methods=["POST"])
 def post_feedback():
-    """Accept feedback and append to out/feedback.json.
-
-    Supports two kinds of feedback:
-      1. Feature-level verdict: requires property_id, filename, feature_id, verdict
-      2. Image-level classification: requires property_id, filename, classification
-         where classification is one of: correct, fp, fn
-    """
     body = request.get_json(silent=True)
     if not body:
         return jsonify({"error": "JSON body required"}), 400
 
-    # Always required
     for field in ("property_id", "filename"):
         if field not in body:
             return jsonify({"error": f"Missing required field: {field}"}), 400
@@ -102,9 +86,10 @@ def post_feedback():
 
     has_verdict = "feature_id" in body and "verdict" in body
     has_classification = "classification" in body
+    has_score = "score_type" in body and "value" in body
 
-    if not has_verdict and not has_classification:
-        return jsonify({"error": "Must provide (feature_id + verdict) or classification"}), 400
+    if not has_verdict and not has_classification and not has_score:
+        return jsonify({"error": "Must provide (feature_id + verdict), classification, or (score_type + value)"}), 400
 
     if has_verdict:
         entry["feature_id"] = body["feature_id"]
@@ -115,7 +100,21 @@ def post_feedback():
         if body["classification"] not in valid_classifications:
             return jsonify({"error": f"classification must be one of: {', '.join(valid_classifications)}"}), 400
         entry["classification"] = body["classification"]
-    # Load existing feedback, append, write
+
+    if has_score:
+        valid_score_types = ("condition", "modernity", "material", "functionality")
+        score_type = body["score_type"]
+        if score_type not in valid_score_types:
+            return jsonify({"error": f"score_type must be one of: {', '.join(valid_score_types)}"}), 400
+        try:
+            value = int(body["value"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "value must be an integer"}), 400
+        if value < 1 or value > 5:
+            return jsonify({"error": "value must be between 1 and 5"}), 400
+        entry["score_type"] = score_type
+        entry["value"] = value
+        entry["timestamp"] = datetime.now(timezone.utc).isoformat()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     if FEEDBACK_PATH.exists():
         try:
@@ -132,7 +131,7 @@ def post_feedback():
     except OSError as e:
         return jsonify({"error": str(e)}), 500
 
-    # Ground Truth: copy "correct" images into out/ground_truth/
+    # approved images get copied to ground truth folder
     if entry.get("classification") == "correct":
         _copy_to_ground_truth(entry["property_id"], entry["filename"])
 
@@ -140,12 +139,6 @@ def post_feedback():
 
 
 def _copy_to_ground_truth(property_id: str, filename: str) -> None:
-    """Copy an approved image into out/ground_truth/{property_id}_{filename}.
-
-    Uses shutil.copy2 to preserve metadata. Silently skips if the source
-    image cannot be found so the feedback request still succeeds.
-    """
-    # Resolve source path (same logic as serve_image)
     base = Path(filename).name
     case_folder = property_id if str(property_id).startswith("case_") else f"case_{property_id}"
     src = CASES_ROOT / case_folder / base
@@ -163,9 +156,106 @@ def _copy_to_ground_truth(property_id: str, filename: str) -> None:
         app.logger.error("Failed to copy to ground truth: %s", exc)
 
 
+def _load_ai_scores() -> dict[tuple[str, str], dict[str, int | None]]:
+    ai_scores: dict[tuple[str, str], dict[str, int | None]] = {}
+    for path in OUT_DIR.glob("results_*.json"):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+        pid = str(data.get("property_id", ""))
+        for img in data.get("images", []):
+            fname = img.get("filename", "")
+            ai_scores[(pid, fname)] = {
+                "condition": img.get("condition_score"),
+                "modernity": img.get("modernity_score"),
+                "material": img.get("material_score"),
+                "functionality": img.get("functionality_score"),
+            }
+    return ai_scores
+
+
+SCORE_TYPES = ("condition", "modernity", "material", "functionality")
+
+
+def _compute_calibration(feedback: list[dict], ai_scores: dict) -> dict:
+    latest_human: dict[tuple[str, str, str], int] = {}
+    for entry in feedback:
+        st = entry.get("score_type")
+        val = entry.get("value")
+        if st and val is not None:
+            key = (entry["property_id"], entry["filename"], st)
+            latest_human[key] = int(val)
+
+    diffs: dict[str, list[int]] = {st: [] for st in SCORE_TYPES}
+
+    for (pid, fname, score_type), human_val in latest_human.items():
+        if score_type not in diffs:
+            continue
+        ai_vals = ai_scores.get((pid, fname))
+        if not ai_vals:
+            continue
+        ai_val = ai_vals.get(score_type)
+        if ai_val is None:
+            continue
+        diffs[score_type].append(human_val - ai_val)
+
+    result: dict[str, dict] = {}
+    for score_type in SCORE_TYPES:
+        d = diffs[score_type]
+        n = len(d)
+        if n == 0:
+            result[score_type] = {
+                "pairs": 0,
+                "mae": None,
+                "bias": None,
+                "agreement_rate": None,
+            }
+        else:
+            mae = sum(abs(v) for v in d) / n
+            bias = sum(d) / n
+            agree = sum(1 for v in d if v == 0)
+            result[score_type] = {
+                "pairs": n,
+                "mae": round(mae, 2),
+                "bias": round(bias, 2),
+                "agreement_rate": round(agree / n * 100, 1),
+            }
+
+    all_diffs = [v for st in SCORE_TYPES for v in diffs[st]]
+    n_all = len(all_diffs)
+    if n_all > 0:
+        result["overall"] = {
+            "pairs": n_all,
+            "mae": round(sum(abs(v) for v in all_diffs) / n_all, 2),
+            "bias": round(sum(all_diffs) / n_all, 2),
+            "agreement_rate": round(sum(1 for v in all_diffs if v == 0) / n_all * 100, 1),
+        }
+    else:
+        result["overall"] = {"pairs": 0, "mae": None, "bias": None, "agreement_rate": None}
+
+    return result
+
+
+GRADE_SCALE = [
+    (17, "A", "Ny/eksklusiv"),
+    (13, "B", "Pæn og moderne"),
+    (9, "C", "Brugbar/neutral"),
+    (5, "D", "Forældet/slidt"),
+    (0, "E", "Renoveringskrævende"),
+]
+
+
+def _total_to_grade(total: int) -> tuple[str, str]:
+    for threshold, letter, label in GRADE_SCALE:
+        if total >= threshold:
+            return letter, label
+    return "E", "Renoveringskrævende"
+
+
 @app.route("/api/stats", methods=["GET"])
 def get_stats():
-    """Compute benchmarking statistics from the latest classification per image."""
     feedback = []
     if FEEDBACK_PATH.exists():
         try:
@@ -174,7 +264,7 @@ def get_stats():
         except (json.JSONDecodeError, OSError):
             feedback = []
 
-    # Deduplicate: keep only the latest classification per (property_id, filename)
+    # dedup: only keep the latest classification per image
     latest: dict[tuple[str, str], str] = {}
     for entry in feedback:
         cls = entry.get("classification")
@@ -188,6 +278,9 @@ def get_stats():
     precision = (correct / (correct + fp) * 100) if (correct + fp) > 0 else 0
     recall = (correct / (correct + fn) * 100) if (correct + fn) > 0 else 0
 
+    ai_scores = _load_ai_scores()
+    calibration = _compute_calibration(feedback, ai_scores)
+
     return jsonify({
         "correct": correct,
         "fp": fp,
@@ -195,13 +288,12 @@ def get_stats():
         "total_classified": correct + fp + fn,
         "precision": round(precision, 1),
         "recall": round(recall, 1),
+        "calibration": calibration,
     })
 
 
 @app.route("/api/reset", methods=["DELETE"])
 def reset_benchmarking():
-    """Clear feedback.json and the ground_truth folder. Destructive action."""
-    # Clear feedback
     try:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         with open(FEEDBACK_PATH, "w", encoding="utf-8") as f:
@@ -209,7 +301,6 @@ def reset_benchmarking():
     except OSError as e:
         return jsonify({"error": f"Failed to clear feedback: {e}"}), 500
 
-    # Clear ground truth folder
     try:
         if GROUND_TRUTH_DIR.exists():
             shutil.rmtree(GROUND_TRUTH_DIR)
@@ -222,7 +313,6 @@ def reset_benchmarking():
 
 @app.route("/api/ground_truth", methods=["GET"])
 def get_ground_truth():
-    """Return a list of filenames present in the out/ground_truth/ folder."""
     GROUND_TRUTH_DIR.mkdir(parents=True, exist_ok=True)
     image_extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff"}
     files = []
@@ -234,7 +324,6 @@ def get_ground_truth():
 
 @app.route("/api/ground_truth/<path:filename>", methods=["GET"])
 def serve_ground_truth_image(filename):
-    """Serve an image from the ground truth folder."""
     base = Path(filename).name
     if base != filename:
         return jsonify({"error": "Invalid filename"}), 400
@@ -246,7 +335,6 @@ def serve_ground_truth_image(filename):
 
 @app.route("/api/summary", methods=["GET"])
 def get_summary():
-    """Aggregate data from all results JSON files into a pipeline summary."""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     total_images = 0
@@ -266,8 +354,8 @@ def get_summary():
     p2_confidence_sum = 0.0
     p2_confidence_n = 0
 
-    # Per-property high-severity tracking: {property_id: {high, total}}
     property_damage: dict[str, dict[str, int]] = {}
+    property_room_grades: list[dict] = []
 
     for path in sorted(OUT_DIR.glob("results_*.json")):
         try:
@@ -329,6 +417,31 @@ def get_summary():
                     p2_confidence_n += 1
 
         property_damage[prop_id] = {"high": prop_high, "total": prop_total_dmg}
+
+        rooms_graded = []
+        for room in data.get("rooms", []):
+            scores = {
+                "condition": room.get("room_condition_score"),
+                "modernity": room.get("room_modernity_score"),
+                "material": room.get("room_material_score"),
+                "functionality": room.get("room_functionality_score"),
+            }
+            values = [v for v in scores.values() if v is not None]
+            if len(values) == 4:
+                total = sum(values)
+                grade, grade_label = _total_to_grade(total)
+                rooms_graded.append({
+                    "room_type": room.get("room_type", "unknown"),
+                    **scores,
+                    "total": total,
+                    "grade": grade,
+                    "grade_label": grade_label,
+                })
+        if rooms_graded:
+            property_room_grades.append({
+                "property_id": prop_id,
+                "rooms": rooms_graded,
+            })
 
     actionability_rate = (kb_actionable / kb_total * 100) if kb_total > 0 else 0
     num_proposals = len(proposal_image_counts)
@@ -392,9 +505,9 @@ def get_summary():
             "total_images": total_images,
             "avg_images_per_proposal": round(avg_images, 1),
         },
+        "room_grades": property_room_grades,
     })
 
 
 if __name__ == "__main__":
-    # Use 5001 to avoid conflict with macOS AirPlay Receiver on port 5000 (which returns 403 for API requests)
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=5001)  # 5001 bc macOS AirPlay hogs 5000

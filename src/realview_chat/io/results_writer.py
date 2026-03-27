@@ -1,5 +1,3 @@
-"""Result writer for JSONL outputs."""
-
 from __future__ import annotations
 
 import json

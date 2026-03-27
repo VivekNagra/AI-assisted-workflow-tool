@@ -1,5 +1,3 @@
-"""CSV reader for property IDs."""
-
 from __future__ import annotations
 
 import csv

@@ -1,5 +1,3 @@
-"""Pipeline pass 2.5: room consolidation."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,6 +19,10 @@ class ConsolidatedFeature:
 class Pass25Result:
     room_type: str
     confirmed_features: list[ConsolidatedFeature]
+    room_condition_score: int | None
+    room_modernity_score: int | None
+    room_material_score: int | None
+    room_functionality_score: int | None
 
 
 def run_pass25(
@@ -38,4 +40,11 @@ def run_pass25(
         )
         for item in result["confirmed_features"]
     ]
-    return Pass25Result(room_type=result["room_type"], confirmed_features=features)
+    return Pass25Result(
+        room_type=result["room_type"],
+        confirmed_features=features,
+        room_condition_score=result.get("room_condition_score"),
+        room_modernity_score=result.get("room_modernity_score"),
+        room_material_score=result.get("room_material_score"),
+        room_functionality_score=result.get("room_functionality_score"),
+    )
